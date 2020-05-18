@@ -303,7 +303,7 @@ try:
     HAS_BOTO = True
 except ImportError:
     HAS_BOTO = False
-    
+
 try:
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.asymmetric.padding import PKCS1v15
@@ -316,6 +316,8 @@ except ImportError:
 
 import tempfile
 from datetime import datetime
+
+from ansible.module_utils.ec2 import AWSRetry
 
 ## we're going to base our connector off the basic SSH connector, as we want nearly all its behavior
 ssh = importlib.import_module('ansible.plugins.connection.ssh')
@@ -348,7 +350,7 @@ class Connection(ssh.Connection):
         ).decode('utf-8')
 
         self._last_key_push = datetime.min
-    
+
     def _create_temporary_key(self):
       key = rsa.generate_private_key(
           public_exponent=ECI_KEY_EXPONENT,
@@ -405,7 +407,7 @@ class Connection(ssh.Connection):
           for i in r['Instances']:
             self._availability_zone = i['Placement']['AvailabilityZone']
       return {
-            "InstanceId": self._instance_id, 
+            "InstanceId": self._instance_id,
             "InstanceOSUser": self._play_context.remote_user,
             "SSHPublicKey": self._public_key,
             "AvailabilityZone": self._availability_zone
@@ -420,6 +422,7 @@ class Connection(ssh.Connection):
           }
       return self._boto_args
 
+@AWSRetry.exponential_backoff(catch_extra_error_codes=['ThrottlingException'])
 def _push_key(aws_client_args, eci_args):
   client = boto3.client('ec2-instance-connect', **aws_client_args)
   client.send_ssh_public_key(**eci_args)
